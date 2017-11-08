@@ -1,9 +1,5 @@
 #include <ros/ros.h>
 #include <geometry_msgs/Point.h>
-#include <fstream>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string>
 #include <vector>
 #include <cmath>
 
@@ -42,17 +38,17 @@ double solveDistance(geometry_msgs::Point p1, geometry_msgs::Point p2)
 }
 
 
-double YCoordinates(double x,double y,double k,double x0)
+double YCoordinates(double x,double y, double k, double x0)
 {
     return k * x0 - k * x + y;
 }
 
-void solveCenterPointOfCircle(geometry_msgs::Point p1, geometry_msgs::Point p2, double radius, geometry_msgs::Point& centerPoint)
+void solveCenterPointOfCircle(geometry_msgs::Point p1, geometry_msgs::Point p2, double radius, vector<geometry_msgs::Point>& centerPoint)
 {
 
 	// p1, p2 and circle are in the same plane(3d to 2d)
 	// circle formula: (x - cp.x)^2 + (y - cp.y)^2 = radius^2
-		double k = 0.0, k_vertical = 0.0;
+	double k = 0.0, k_vertical = 0.0;
     double mid_x = 0.0, mid_y = 0.0;
     double a = 0.0, b = 0.0, c = 0.0;
     geometry_msgs::Point center1, center2;
@@ -82,17 +78,17 @@ void solveCenterPointOfCircle(geometry_msgs::Point p1, geometry_msgs::Point p2, 
 		center1.z = p1.z;
 		center2.z = p1.z;
 		
-    centerPoint = center2;
+    centerPoint.push_back(center2);
+    centerPoint.push_back(center1);
 
 }
 
 
-void calCircleParameters(geometry_msgs::Point p1, geometry_msgs::Point p2, point2D pp1, point2D pp2, double& radius, geometry_msgs::Point& centerPoint)
+void calCircleParameters(geometry_msgs::Point p1, geometry_msgs::Point p2, point2D pp1, point2D pp2, double& radius, vector<geometry_msgs::Point>& centerPoint)
 {
 	double angle = solveAngle(pp1, pp2);
 	double distance = solveDistance(p1, p2);
 	radius = (distance / 2) / sin(angle);
-	centerPoint.z = p1.z;
 	solveCenterPointOfCircle(p1, p2, radius, centerPoint);
 	ROS_INFO("angle: %f", angle);
 	ROS_INFO("radius: %f", radius);
@@ -100,33 +96,46 @@ void calCircleParameters(geometry_msgs::Point p1, geometry_msgs::Point p2, point
 	ROS_INFO("centerPoint: (%f, %f, %f)", centerPoint.x, centerPoint.y, centerPoint.z);
 }
 
-void generateSerialPoints(int num, geometry_msgs::Point p1, geometry_msgs::Point p2, point2D pp1, point2D pp2, std::vector<geometry_msgs::Point>& serialKiller)
+
+bool betweenP1andP2(geometry_msgs::Point p)
 {
-	double radius;
-	geometry_msgs::Point centerPoint;
-	calCircleParameters(p1, p2, pp1, pp2, radius, centerPoint);
+	double maxX, minX, maxY, minY;
+	maxX = max(p1.x, p2.x);
+	minX = min(p1.x, p2.x);
+	maxY = max(p1.y, p2.y);
+	maxY = min(p1.y, p2.y);
+	if(p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+		return true;
+	return false;
+}
+
+void generateSerialPoints(int num, double radius, std::vector<geometry_msgs::Point> centerPoint, std::vector<geometry_msgs::Point>& serialKiller)
+{
 	// circle formula: (x - cp.x)^2 + (y - cp.y)^2 = r^2;
 	// generator random amount of points on the circle: (at least 3 point)
 	geometry_msgs::Point temp;
 	double stride =  (2 * radius) / num;
 	
-	temp.x = -radius + centerPoint.x;
-	temp.z = centerPoint.z;
-	for(int i = 0; i < num; i++)
+	for(int i = 0; i < centerPoint.size(); i++)
 	{
-		double distance = radius * radius - (temp.x - centerPoint.x) * (temp.x - centerPoint.x);
-		if(distance >= 0)
-		{	
-			temp.y = sqrt(distance) + centerPoint.y;
-			serialKiller.push_back(temp);
-			ROS_INFO("serial points: (%f, %f, %f)", temp.x, temp.y, temp.z);
-			temp.y = -sqrt(distance) + centerPoint.y;
-			ROS_INFO("serial points: (%f, %f, %f)", temp.x, temp.y, temp.z);
-			serialKiller.push_back(temp);
-			temp.x += stride;
+		temp.x = -radius + centerPoint[i].x;
+		temp.z = centerPoint[i].z;
+		for(int i = 0; i < num; i++)
+		{
+			double distance = radius * radius - (temp.x - centerPoint[i].x) * (temp.x - centerPoint[i].x);
+			if(distance >= 0 && !betweenP1andP2(temp))
+			{	
+				temp.y = sqrt(distance) + centerPoint[i].y;
+				serialKiller.push_back(temp);
+				ROS_INFO("serial points: (%f, %f, %f)", temp.x, temp.y, temp.z);
+				temp.x += stride;
+			}
+			
+			
 		}
-		
-		
 	}
 }
+
+
+
 
