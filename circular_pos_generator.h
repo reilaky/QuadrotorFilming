@@ -1,10 +1,12 @@
 #include <ros/ros.h>
 #include <geometry_msgs/Point.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <vector>
 #include <cmath>
 
 #define FOCALLENGTH 500
-
+#define PI 3.14159265359
 struct point2D
 {
 	int x, y;
@@ -37,18 +39,27 @@ double solveDistance(geometry_msgs::Point p1, geometry_msgs::Point p2)
 	return distance;
 }
 
+double solveCosine(geometry_msgs::Point p1, geometry_msgs::Point p2, geometry_msgs::Point pos)
+{
+	double p1p2 = solveDistance(p1, p2);
+	double p1pos = solveDistance(p1, pos);
+	double dotProduct = (pos.x - p1.x) * (p2.x - p1.x) + (pos.y - p1.y) * (p2.y - p1.y) + (pos.z - p1.z) * (p2.z - p1.z);
+	double cosVal = dotProduct / (p1p2 * p1pos);
+	return cosVal; 
+}
 
-double YCoordinates(double x,double y, double k, double x0)
+
+double YCoordinates(double x,double y,double k,double x0)
 {
     return k * x0 - k * x + y;
 }
 
-void solveCenterPointOfCircle(geometry_msgs::Point p1, geometry_msgs::Point p2, double radius, vector<geometry_msgs::Point>& centerPoint)
+void solveCenterPointOfCircle(geometry_msgs::Point p1, geometry_msgs::Point p2, double radius, geometry_msgs::Point& centerPoint)
 {
 
 	// p1, p2 and circle are in the same plane(3d to 2d)
 	// circle formula: (x - cp.x)^2 + (y - cp.y)^2 = radius^2
-	double k = 0.0, k_vertical = 0.0;
+		double k = 0.0, k_vertical = 0.0;
     double mid_x = 0.0, mid_y = 0.0;
     double a = 0.0, b = 0.0, c = 0.0;
     geometry_msgs::Point center1, center2;
@@ -78,64 +89,120 @@ void solveCenterPointOfCircle(geometry_msgs::Point p1, geometry_msgs::Point p2, 
 		center1.z = p1.z;
 		center2.z = p1.z;
 		
-    centerPoint.push_back(center2);
-    centerPoint.push_back(center1);
+    centerPoint = center2;
 
 }
 
-
-void calCircleParameters(geometry_msgs::Point p1, geometry_msgs::Point p2, point2D pp1, point2D pp2, double& radius, vector<geometry_msgs::Point>& centerPoint)
+void calCircleParameters(geometry_msgs::Point p1, geometry_msgs::Point p2, point2D pp1, point2D pp2, double& radius, geometry_msgs::Point& centerPoint)
 {
 	double angle = solveAngle(pp1, pp2);
 	double distance = solveDistance(p1, p2);
 	radius = (distance / 2) / sin(angle);
+	centerPoint.z = p1.z;
 	solveCenterPointOfCircle(p1, p2, radius, centerPoint);
-	ROS_INFO("angle: %f", angle);
+	/*ROS_INFO("angle: %f", angle);
 	ROS_INFO("radius: %f", radius);
 	ROS_INFO("distance: %f", distance);
 	ROS_INFO("centerPoint: (%f, %f, %f)", centerPoint.x, centerPoint.y, centerPoint.z);
+	*/
 }
 
-
-bool betweenP1andP2(geometry_msgs::Point p)
+void solveStartAndEndPoint(double radius, geometry_msgs::Point centerPoint, geometry_msgs::Point p1, geometry_msgs::Point p2, geometry_msgs::Point &start, geometry_msgs::Point &end, double &angle1, double &angle2)
 {
-	double maxX, minX, maxY, minY;
-	maxX = max(p1.x, p2.x);
-	minX = min(p1.x, p2.x);
-	maxY = max(p1.y, p2.y);
-	maxY = min(p1.y, p2.y);
-	if(p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
-		return true;
-	return false;
+	// ROS_INFO("centerPoint (%f, %f, %f)\n", centerPoint.x, centerPoint.y, centerPoint.z);
+	// ROS_INFO("p1 (%f, %f, %f)   p2 (%f, %f, %f)", p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+	double k = (p2.y - p1.y) / (p2.x - p1.x);
+	// ROS_INFO("k = %f", k);
+	if(p1.x == p2.x)
+	{
+		start.x = centerPoint.x;
+		start.y = centerPoint.y - radius;
+		end.x = centerPoint.x;
+		end.y = centerPoint.y + radius;
+	}
+	if(k == 0)
+	{
+		start.x = centerPoint.x - radius;
+		start.y = centerPoint.y;
+		end.x =  centerPoint.x + radius;
+		end.y = centerPoint.y;
+	}
+	else
+	{
+		double offset = centerPoint.y - k * centerPoint.x;
+		// y = kx + b
+		// distance(start, centerPoinrt) = r;
+		double a = (k * k) + 1;
+		double b = 2 * (k * (offset - centerPoint.y) - centerPoint.x);
+		double c = centerPoint.x * centerPoint.x + (offset - centerPoint.y) * (offset - centerPoint.y) - (radius * radius);
+		start.x = (-b - sqrt(b * b - 4 * a * c)) / (2 * a);
+		start.y = k * start.x + offset;
+		end.x = (-b + sqrt(b * b - 4 * a * c)) / (2 * a);
+		end.y =  k * end.x + offset;		
+	}
+	// y = centerPoint.y + radius * cos(angle);
+	double sinv = (start.x - centerPoint.x) / radius;
+	double cosv = (start.y - centerPoint.y) / radius;
+	// ROS_INFO("sin1 = %f cos1 = %f ", sinv, cosv);
+	if(sinv >= 0 && cosv >= 0) // belong to 1st area
+		angle1 = asin(sinv);
+	else if(sinv > 0 && cosv <= 0) // belong to 2nd area
+		angle1 = acos(cosv);
+	else if(sinv < 0 && cosv < 0)
+		angle1 = PI - asin(sinv);
+	else if(sinv < 0 && cosv > 0)
+		angle1 = 2 * PI + asin(sinv);
+	
+	sinv = (end.x - centerPoint.x) / radius;
+	cosv = (end.y - centerPoint.y) / radius;
+	// ROS_INFO("sin2 = %f cos2 = %f ", sinv, cosv);
+	if(sinv >= 0 && cosv >= 0) // belong to 1st area
+		angle2 = asin(sinv);
+	else if(sinv > 0 && cosv < 0) // belong to 2nd area
+		angle2 = acos(cosv);
+	else if(sinv < 0 && cosv <= 0)
+		angle2 = PI - asin(sinv);
+	else if(sinv < 0 && cosv > 0)
+		angle2 = 2 * PI + asin(sinv);
+	// ROS_INFO("angle1 = %f, angle2 = %f", angle1, angle2);
+	// ROS_INFO("angle1: %f, angle2: %f", angle1, angle2);
 }
 
-void generateSerialPoints(int num, double radius, std::vector<geometry_msgs::Point> centerPoint, std::vector<geometry_msgs::Point>& serialKiller)
+
+void generateSerialPoints(int num, double radius, geometry_msgs::Point centerPoint, geometry_msgs::Point p1, geometry_msgs::Point p2, std::vector<geometry_msgs::Point>& serialKiller)
 {
 	// circle formula: (x - cp.x)^2 + (y - cp.y)^2 = r^2;
 	// generator random amount of points on the circle: (at least 3 point)
-	geometry_msgs::Point temp;
-	double stride =  (2 * radius) / num;
-	
-	for(int i = 0; i < centerPoint.size(); i++)
+	serialKiller.clear();
+	geometry_msgs::Point temp, start, end;
+	start.z = end.z = temp.z = p1.z;
+	double angle1, angle2;
+	// only draw half circle as traj
+	solveStartAndEndPoint(radius, centerPoint, p1, p2, start, end, angle1, angle2);
+	temp.x = start.x;
+	temp.y = start.y;
+	serialKiller.push_back(temp);
+	bool arc = true;
+	for(int i = 1; i <= num; i++)
 	{
-		temp.x = -radius + centerPoint[i].x;
-		temp.z = centerPoint[i].z;
-		for(int i = 0; i < num; i++)
-		{
-			double distance = radius * radius - (temp.x - centerPoint[i].x) * (temp.x - centerPoint[i].x);
-			if(distance >= 0 && !betweenP1andP2(temp))
-			{	
-				temp.y = sqrt(distance) + centerPoint[i].y;
-				serialKiller.push_back(temp);
-				ROS_INFO("serial points: (%f, %f, %f)", temp.x, temp.y, temp.z);
-				temp.x += stride;
+			temp.x = centerPoint.x + radius * sin(angle1 + (PI / num * i)); 
+			temp.y = centerPoint.y + radius * cos(angle1 + (PI / num * i));
+			if(acos(solveCosine(temp, p1, p2)) > PI / 2)
+			{
+				ROS_INFO("arc = %f", acos(solveCosine(temp, p1, p2)));
+				arc = false;
+				break;
 			}
-			
-			
+			serialKiller.push_back(temp);
+	}
+	if(!arc)
+	{
+		serialKiller.clear();
+		for(int i = 1; i <= num; i++)
+		{
+			temp.x = centerPoint.x + radius * sin(angle1 - (PI / num * i)); 
+			temp.y = centerPoint.y + radius * cos(angle1 - (PI / num * i));
+			serialKiller.push_back(temp);
 		}
 	}
 }
-
-
-
-

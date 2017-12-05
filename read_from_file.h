@@ -1,8 +1,9 @@
+#include <geometry_msgs/Point.h>
 #include <fstream>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string>
 #include <vector>
+#include <stdio.h>
+#include <stdlib.h>
 
 void read_from_file(std::string dir, std::vector<geometry_msgs::Point>& skeleton, double flag)
 {
@@ -52,3 +53,4 @@ void read_from_file(std::string dir, std::vector<geometry_msgs::Point>& skeleton
 		}
 	}
 }
+
